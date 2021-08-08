@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Send a payment to someone over a list of hops
+
+TMPDIR=$( mktemp -d /tmp/XXXXX )
+trap "rm -rf $TMPDIR" exit
+
+echo "#  Paste invoice:"
+read -p INVOICE:\  invoice
+
+echo "#  List of hops, including final hop. End with DTRL-D"
+cat > $TMPDIR/hops
+
+OUTGOING_CHAN_ID=$( lncli listchannels  | grep -A 5 $( head -n1 $TMPDIR/hops ) | grep chan_id | cut -d '"' -f4  )
+HOPS=$( echo "$( cat $TMPDIR/hops )" | sed 's/ /,/g' )
+PAYMENT_HASH=$(    lncli decodepayreq $invoice | jq -r '.payment_hash' )
+PAYMENT_ADDRESS=$( lncli decodepayreq $invoice | jq -r '.payment_addr' )
+AMOUNT=$(          lncli decodepayreq $invoice | jq -r '.num_satoshis' )
+
+lncli buildroute --amt ${AMOUNT} --hops ${HOPS} --outgoing_chan_id ${OUTGOING_CHAN_ID} | jq -c "(.route.hops[-1] | .mpp_record) |= {payment_addr:\"${PAYMENT_ADDRESS}\", total_amt_msat: \"${AMOUNT}000\"}" | lncli sendtoroute --payment_hash=${PAYMENT_HASH} -
